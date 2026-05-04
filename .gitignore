@@ -1,0 +1,18 @@
+.next
+node_modules
+*.log
+
+# 환경변수 (절대 커밋하지 마세요)
+.env.local
+.env*.local
+
+# 로컬 DB 파일
+data/projects.json
+
+.vercel
+
+# 빌드 캐시
+tsconfig.tsbuildinfo
+
+# Claude Code 로컬 설정
+.claude/

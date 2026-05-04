@@ -1,0 +1,26 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  font-family: "Segoe UI", "Noto Sans KR", sans-serif;
+  background: linear-gradient(140deg, #edf6f8 0%, #e8f4ef 100%);
+  color: #193238;
+}
+
+input,
+select,
+textarea {
+  width: 100%;
+  border: 1px solid #d4e3e1;
+  border-radius: 8px;
+  padding: 9px;
+  font: inherit;
+}
+
+@media print {
+  body { background: white !important; }
+  button { display: none !important; }
+  nav, header { display: none !important; }
+  .no-print { display: none !important; }
+}
