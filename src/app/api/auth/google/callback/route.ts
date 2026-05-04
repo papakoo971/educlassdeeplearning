@@ -29,36 +29,65 @@ export async function GET(req: Request) {
     return NextResponse.redirect(new URL("/login?error=invalid_oauth_state", url.origin));
   }
 
-  const clientId = process.env.GOOGLE_CLIENT_ID;
-  const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
-  const redirectUri =
-    process.env.GOOGLE_REDIRECT_URI ?? `${url.origin}/api/auth/google/callback`;
+  const clientId = process.env.GOOGLE_CLIENT_ID?.trim();
+  const clientSecret = process.env.GOOGLE_CLIENT_SECRET?.trim();
+  const redirectUri = (
+    process.env.GOOGLE_REDIRECT_URI ?? `${url.origin}/api/auth/google/callback`
+  ).trim();
   if (!clientId || !clientSecret) {
+    console.error("[oauth] missing google credentials", {
+      hasClientId: !!clientId,
+      hasClientSecret: !!clientSecret,
+    });
     return NextResponse.redirect(new URL("/login?error=missing_google_credentials", url.origin));
   }
 
-  const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      code,
-      client_id: clientId,
-      client_secret: clientSecret,
-      redirect_uri: redirectUri,
-      grant_type: "authorization_code"
-    })
-  });
+  let tokenRes: Response;
+  try {
+    tokenRes = await fetch("https://oauth2.googleapis.com/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        code,
+        client_id: clientId,
+        client_secret: clientSecret,
+        redirect_uri: redirectUri,
+        grant_type: "authorization_code"
+      })
+    });
+  } catch (err) {
+    console.error("[oauth] token fetch threw", {
+      message: (err as Error).message,
+      cause: (err as { cause?: unknown }).cause,
+      redirectUri,
+    });
+    return NextResponse.redirect(new URL("/login?error=token_fetch_threw", url.origin));
+  }
 
   if (!tokenRes.ok) {
+    const body = await tokenRes.text().catch(() => "<no body>");
+    console.error("[oauth] token exchange not ok", { status: tokenRes.status, body, redirectUri });
     return NextResponse.redirect(new URL("/login?error=token_exchange_failed", url.origin));
   }
 
   const tokenData = (await tokenRes.json()) as GoogleToken;
-  const userRes = await fetch("https://openidconnect.googleapis.com/v1/userinfo", {
-    headers: { Authorization: `Bearer ${tokenData.access_token}` }
-  });
+
+  let userRes: Response;
+  try {
+    userRes = await fetch("https://openidconnect.googleapis.com/v1/userinfo", {
+      headers: { Authorization: `Bearer ${tokenData.access_token}` }
+    });
+  } catch (err) {
+    console.error("[oauth] userinfo fetch threw", {
+      message: (err as Error).message,
+      cause: (err as { cause?: unknown }).cause,
+    });
+    return NextResponse.redirect(new URL("/login?error=userinfo_fetch_threw", url.origin));
+  }
 
   if (!userRes.ok) {
+    const body = await userRes.text().catch(() => "<no body>");
+    console.error("[oauth] userinfo not ok", { status: userRes.status, body });
     return NextResponse.redirect(new URL("/login?error=userinfo_failed", url.origin));
   }
 
@@ -70,7 +99,17 @@ export async function GET(req: Request) {
     picture: user.picture
   };
 
-  await upsertUser(sessionUser);
+  try {
+    await upsertUser(sessionUser);
+  } catch (err) {
+    console.error("[oauth] upsertUser threw", {
+      message: (err as Error).message,
+      cause: (err as { cause?: unknown }).cause,
+      hasSupabaseUrl: !!process.env.NEXT_PUBLIC_SUPABASE_URL,
+      hasSupabaseKey: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
+    });
+    return NextResponse.redirect(new URL("/login?error=upsert_user_failed", url.origin));
+  }
 
   const res = NextResponse.redirect(new URL("/dashboard", url.origin));
   res.cookies.set(SESSION_COOKIE_NAME, signSession(sessionUser), {
